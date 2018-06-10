@@ -105,6 +105,18 @@ static pthread_mutex_t searchLock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t compressorLock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t regexLock = PTHREAD_MUTEX_INITIALIZER;
 
+std::pair<kiwix::Reader*, kiwix::Searcher*>
+get_from_humanReadableBookId(const std::string& humanReadableBookId) {
+  kiwix::Searcher* searcher
+        = searchers.find(humanReadableBookId) != searchers.end()
+              ? searchers.find(humanReadableBookId)->second
+              : globalSearcher;
+  kiwix::Reader* reader = readers.find(humanReadableBookId) != readers.end()
+                                ? readers.find(humanReadableBookId)->second
+                                : NULL;
+  return std::pair<kiwix::Reader*, kiwix::Searcher*>(reader, searcher);
+}
+
 /* Try to get the mimeType from the file extension */
 static std::string getMimeTypeForFile(const std::string& filename)
 {
@@ -138,7 +150,10 @@ static bool startswith(const std::string& base, const std::string& start)
 
 void introduceTaskbar(string& content, const string& humanReadableBookId)
 {
+  string zimTitle = "&#x1f3e0;";
+
   pthread_mutex_lock(&regexLock);
+
   if (!noSearchBarFlag) {
     content = appendToFirstOccurence(
         content,
@@ -160,10 +175,19 @@ void introduceTaskbar(string& content, const string& humanReadableBookId)
              RESOURCE::taskbar_html_part,
              humanReadableBookId,
              "__CONTENT__"));
+
+      auto reader = get_from_humanReadableBookId(humanReadableBookId).first;
+      if (reader != nullptr) {
+        zimTitle = reader->getTitle();
+      }
     }
   }
+
+  // TODO We should use here proper HTML entities encoding and URL encoding
   content = replaceRegex(content, rootLocation, "__ROOT_LOCATION__");
+  content = replaceRegex(content, replaceRegex(zimTitle, "&amp;", "&"), "__ZIM_TITLE__");
   content = replaceRegex(content, replaceRegex(humanReadableBookId, "%26", "&"), "__CONTENT_ESCAPED__");
+
   pthread_mutex_unlock(&regexLock);
 }
 
@@ -367,18 +391,6 @@ static struct MHD_Response* build_callback_response_from_entry(
       response, MHD_HTTP_HEADER_CACHE_CONTROL, "max-age=2723040, public");
 
   return response;
-}
-
-std::pair<kiwix::Reader*, kiwix::Searcher*>
-get_from_humanReadableBookId(const std::string& humanReadableBookId) {
-  kiwix::Searcher* searcher
-        = searchers.find(humanReadableBookId) != searchers.end()
-              ? searchers.find(humanReadableBookId)->second
-              : globalSearcher;
-  kiwix::Reader* reader = readers.find(humanReadableBookId) != readers.end()
-                                ? readers.find(humanReadableBookId)->second
-                                : NULL;
-  return std::pair<kiwix::Reader*, kiwix::Searcher*>(reader, searcher);
 }
 
 static struct MHD_Response* handle_meta(RequestContext* request)
